@@ -82,11 +82,19 @@ def handler(event, context):
                 }
             
             event_data = json.loads(body) if isinstance(body, str) else body
-            event_id = str(uuid.uuid4())
-            event_data['eventId'] = event_id
             
-            # Validate required fields
-            required_fields = ['title', 'descriptions', 'date', 'location', 'capacity', 'organizer', 'status']
+            # Use provided eventId or generate new one
+            if 'eventId' not in event_data:
+                event_data['eventId'] = str(uuid.uuid4())
+            
+            # Support both 'description' and 'descriptions' for backward compatibility
+            if 'description' in event_data and 'descriptions' not in event_data:
+                event_data['descriptions'] = event_data['description']
+            elif 'descriptions' in event_data and 'description' not in event_data:
+                event_data['description'] = event_data['descriptions']
+            
+            # Validate required fields (check for either description or descriptions)
+            required_fields = ['title', 'date', 'location', 'capacity', 'organizer', 'status']
             for field in required_fields:
                 if field not in event_data:
                     return {
@@ -95,9 +103,17 @@ def handler(event, context):
                         'body': json.dumps({'error': f'Missing required field: {field}'})
                     }
             
+            # Check for description field
+            if 'description' not in event_data and 'descriptions' not in event_data:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Missing required field: description'})
+                }
+            
             table.put_item(Item=event_data)
             return {
-                'statusCode': 200,
+                'statusCode': 201,
                 'headers': headers,
                 'body': json.dumps(event_data, cls=DecimalEncoder)
             }
@@ -203,9 +219,9 @@ def handler(event, context):
             
             table.delete_item(Key={'eventId': event_id})
             return {
-                'statusCode': 200,
+                'statusCode': 204,
                 'headers': headers,
-                'body': json.dumps({'message': 'Event deleted successfully'})
+                'body': ''
             }
         
         # Not found
