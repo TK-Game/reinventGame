@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Event Management API
+Resources:
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Events
+      AttributeDefinitions:
+      - AttributeName: eventId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: eventId
+        KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+  EventAPIFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://event-api-deploy-1932287368/8dade75fe93c0f3dad62f01b5c871c9f
+      Handler: lambda_handler.handler
+      Runtime: python3.12
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          DYNAMODB_TABLE:
+            Ref: EventsTable
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: EventsTable
+      Events:
+        ApiRoot:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+            RestApiId:
+              Ref: EventAPI
+        ApiProxy:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            RestApiId:
+              Ref: EventAPI
+  EventAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+Outputs:
+  APIEndpoint:
+    Description: Event Management API Endpoint
+    Value:
+      Fn::Sub: https://${EventAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/

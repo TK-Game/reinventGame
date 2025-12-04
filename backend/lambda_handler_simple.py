@@ -19,6 +19,7 @@ def handler(event, context):
         http_method = event.get('httpMethod', event.get('requestContext', {}).get('http', {}).get('method', 'GET'))
         path = event.get('path', event.get('rawPath', '/'))
         body = event.get('body')
+        query_params = event.get('queryStringParameters') or {}
         
         # CORS headers
         headers = {
@@ -54,7 +55,17 @@ def handler(event, context):
         
         # List events
         if path == '/events' and http_method == 'GET':
-            response = table.scan()
+            # Check for status filter
+            if 'status' in query_params:
+                status_filter = query_params['status']
+                response = table.scan(
+                    FilterExpression='#st = :status',
+                    ExpressionAttributeNames={'#st': 'status'},
+                    ExpressionAttributeValues={':status': status_filter}
+                )
+            else:
+                response = table.scan()
+            
             return {
                 'statusCode': 200,
                 'headers': headers,
@@ -86,14 +97,22 @@ def handler(event, context):
             
             table.put_item(Item=event_data)
             return {
-                'statusCode': 201,
+                'statusCode': 200,
                 'headers': headers,
                 'body': json.dumps(event_data, cls=DecimalEncoder)
             }
         
         # Get single event
         if path.startswith('/events/') and http_method == 'GET':
-            event_id = path.split('/')[-1]
+            parts = path.split('/')
+            if len(parts) < 3:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Invalid path'})
+                }
+            event_id = parts[-1]
+            
             response = table.get_item(Key={'eventId': event_id})
             if 'Item' not in response:
                 return {
@@ -109,7 +128,15 @@ def handler(event, context):
         
         # Update event
         if path.startswith('/events/') and http_method == 'PUT':
-            event_id = path.split('/')[-1]
+            parts = path.split('/')
+            if len(parts) < 3:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Invalid path'})
+                }
+            event_id = parts[-1]
+            
             if not body:
                 return {
                     'statusCode': 400,
@@ -136,6 +163,7 @@ def handler(event, context):
                     'body': json.dumps({'error': 'No fields to update'})
                 }
             
+            # Use ExpressionAttributeNames for all fields to avoid reserved keyword issues
             update_expression = "SET " + ", ".join([f"#{k} = :{k}" for k in update_data.keys()])
             expression_attribute_names = {f"#{k}": k for k in update_data.keys()}
             expression_attribute_values = {f":{k}": v for k, v in update_data.items()}
@@ -155,7 +183,15 @@ def handler(event, context):
         
         # Delete event
         if path.startswith('/events/') and http_method == 'DELETE':
-            event_id = path.split('/')[-1]
+            parts = path.split('/')
+            if len(parts) < 3:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Invalid path'})
+                }
+            event_id = parts[-1]
+            
             # Check if event exists
             response = table.get_item(Key={'eventId': event_id})
             if 'Item' not in response:
